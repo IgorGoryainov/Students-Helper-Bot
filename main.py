@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 import os
 import random
-from datetime import datetime
-import time
 
 from vk_api.longpoll import VkLongPoll, VkEventType
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 import vk_api
 
 import message_list
+from bot_logic import get_schedule, load_user_list, save_user_list
 
 token = os.environ.get("VK_TOKEN", "")
 
@@ -16,33 +15,10 @@ vk_session = vk_api.VkApi(token=token)
 session_api = vk_session.get_api()
 longpoll = VkLongPoll(vk_session)
 
-permitted_user = []
-mailing_list = []
-week_info = []
-
 elder_id = 408637275
 mailing_flag = 0
 message_flag = 0
-
-
-def load_user_list(path):
-    users = []
-    if not os.path.exists(path):
-        return users
-    with open(path, 'r') as f:
-        lines = f.readlines()
-    count = int(lines[0])
-    for i in range(1, count + 1):
-        users.append(int(lines[i]))
-    return users
-
-
-def save_user_list(path, users):
-    with open(path, 'w') as f:
-        f.write(str(len(users)) + "\n")
-        for uid in users:
-            f.write(str(uid) + "\n")
-
+mailing_message = ""
 
 permitted_user = load_user_list('id_list.txt')
 mailing_list = load_user_list('id_board.txt')
@@ -81,45 +57,11 @@ def create_keyboard(response):
     return keyboard.get_keyboard()
 
 
-def week_parity():
-    week_number = datetime.utcnow().isocalendar()[1]
-    return 1 if week_number % 2 == 0 else 0
-
-
-SCHEDULE = {
-    1: {  # even week (parity=1)
-        1: message_list.msg1_monday,
-        2: message_list.msg1_tuesday,
-        3: message_list.msg1_wednesday,
-        4: message_list.msg1_thursday,
-        5: message_list.msg1_friday,
-        6: message_list.msg1_saturday,
-        0: 'Выходной',
-    },
-    0: {  # odd week (parity=0)
-        1: message_list.msg2_monday,
-        2: message_list.msg2_tuesday,
-        3: message_list.msg2_wednesday,
-        4: message_list.msg2_thursday,
-        5: message_list.msg2_friday,
-        6: message_list.msg2_saturday,
-        0: 'Выходной',
-    },
-}
-
-
-def get_schedule(day_offset=0):
-    parity = week_parity()
-    weekday = (int(time.strftime('%w', time.localtime())) + day_offset) % 7
-    return SCHEDULE[parity][weekday]
-
-
-def get_keyboard_type(user_id, response):
+def get_keyboard_type(user_id, response, subscribed_users):
     if response == 'закрыть':
         return 'закрыть'
-    is_elder = (user_id == elder_id)
-    prefix = 'elder' if is_elder else 'default'
-    suffix = '2' if user_id in mailing_list else '1'
+    prefix = 'elder' if user_id == elder_id else 'default'
+    suffix = '2' if user_id in subscribed_users else '1'
     return f'{prefix}_{suffix}'
 
 
@@ -131,7 +73,7 @@ while True:
 
             response = event.text.lower()
             user_id = event.user_id
-            key_base = get_keyboard_type(user_id, response)
+            key_base = get_keyboard_type(user_id, response, mailing_list)
             keyboard = create_keyboard(key_base)
 
             if user_id not in permitted_user:
